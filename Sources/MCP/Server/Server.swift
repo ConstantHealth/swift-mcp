@@ -116,7 +116,7 @@ public actor Server {
     /// Server information
     private let serverInfo: Server.Info
     /// The server connection
-    private var connection: (any Transport)?
+    private var connection: (any ServerTransport)?
     /// The server logger
     private var logger: Logger? {
         get async {
@@ -167,7 +167,7 @@ public actor Server {
     ///   - transport: The transport to use for the server
     ///   - initializeHook: An optional hook that runs when the client sends an initialize request
     public func start(
-        transport: any Transport,
+        transport: any ServerTransport,
         initializeHook: (@Sendable (Client.Info, Client.Capabilities) async throws -> Void)? = nil
     ) async throws {
         self.connection = transport
@@ -251,10 +251,10 @@ public actor Server {
     @discardableResult
     public func withMethodHandler<M: Method>(
         _ type: M.Type,
-        handler: @escaping @Sendable (M.Parameters) async throws -> M.Result
+        handler: @escaping @Sendable (ID, M.Parameters) async throws -> M.Result
     ) -> Self {
         methodHandlers[M.name] = TypedRequestHandler { (request: Request<M>) -> Response<M> in
-            let result = try await handler(request.params)
+            let result = try await handler(request.id, request.params)
             return Response(id: request.id, result: result)
         }
         return self
@@ -283,11 +283,11 @@ public actor Server {
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
 
         let responseData = try encoder.encode(response)
-        try await connection.send(responseData)
+        try await connection.send(requestId: response.id, data: responseData)
     }
 
     /// Send a notification to connected clients
-    public func notify<N: Notification>(_ notification: Message<N>) async throws {
+    public func notify<N: Notification>(_ notification: Message<N>, requestId: ID) async throws {
         guard let connection = connection else {
             throw MCPError.internalError("Server connection not initialized")
         }
@@ -296,7 +296,7 @@ public actor Server {
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
 
         let notificationData = try encoder.encode(notification)
-        try await connection.send(notificationData)
+        try await connection.send(requestId: requestId, data: notificationData)
     }
 
     // MARK: - Sampling
@@ -544,7 +544,7 @@ public actor Server {
         initializeHook: (@Sendable (Client.Info, Client.Capabilities) async throws -> Void)?
     ) {
         // Initialize
-        withMethodHandler(Initialize.self) { [weak self] params in
+        withMethodHandler(Initialize.self) { [weak self] id, params in
             guard let self = self else {
                 throw MCPError.internalError("Server was deallocated")
             }
@@ -579,7 +579,7 @@ public actor Server {
         }
 
         // Ping
-        withMethodHandler(Ping.self) { _ in return Empty() }
+        withMethodHandler(Ping.self) { _, _ in return Empty() }
     }
 
     private func setInitialState(
