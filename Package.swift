@@ -14,13 +14,6 @@ var targetDependencies: [Target.Dependency] = [
     .product(name: "Logging", package: "swift-log"),
 ]
 
-// Add EventSource only on Apple platforms (non-Linux)
-#if !os(Linux)
-    dependencies.append(
-        .package(url: "https://github.com/loopwork-ai/eventsource.git", from: "1.1.0"))
-    targetDependencies.append(.product(name: "EventSource", package: "eventsource"))
-#endif
-
 let package = Package(
     name: "mcp-swift-sdk",
     platforms: [
